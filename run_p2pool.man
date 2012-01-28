@@ -1,0 +1,127 @@
+.TH p2pool 1 "28 January 2012" "" ""
+.SH NAME
+p2pool
+.SH SYNOPSIS
+.B run_p2pool.py
+[\fB-h\fP] [\fB--version\fP] [\fB--net\fP {bitcoin,litecoin}] [\fB--testnet\fP]
+[\fB--debug\fP] [\fB-a\fP ADDRESS] [\fB--logfile\fP LOGFILE]
+[\fB--merged-url\fP MERGED_URL]
+[\fB--merged-userpass\fP MERGED_USERPASS]
+[\fB--give-author\fP DONATION_PERCENTAGE] [\fB--irc-announce\fP]
+[\fB--p2pool-port\fP PORT] [\fB-n\fP ADDR[:PORT]] [\fB--disable-upnp\fP]
+[\fB-w\fP PORT] [\fB-f\fP FEE_PERCENTAGE]
+[\fB--bitcoind-address\fP BITCOIND_ADDRESS]
+[\fB--bitcoind-rpc-port\fP BITCOIND_RPC_PORT]
+[\fB--bitcoind-p2p-port\fP BITCOIND_P2P_PORT]
+[BITCOIND_RPCUSERPASS [BITCOIND_RPCUSERPASS \.\.\.]]
+.SH DESCRIPTION
+p2pool implements a peer-to-peer Bitcoin mining pool.
+.P
+It connects to your local
+.I bitcoind
+daemon and to a number of peers.
+.P
+Your miner(s) connect to p2pool.
+.P
+.B p2pool
+also has a (minimal) HTTP interface.
+.I 
+.SH ARGUMENTS
+.SS Generic Arguments
+.TP
+\fB-h\fP, \fB--help\fP
+show this help message and exit
+.TP
+\fB--version\fP
+show program's version number and exit
+.TP
+\fB--net\fP {bitcoin,litecoin}
+use specified network (default: bitcoin)
+.TP
+\fB--testnet\fP
+use the network's testnet
+.TP
+\fB--debug\fP
+enable debugging mode
+.TP
+\fB-a\fP ADDRESS, \fB--address\fP ADDRESS
+generate payouts to this address (default: <address
+requested from bitcoind>)
+.TP
+\fB--logfile\fP LOGFILE
+log to this file (default: data/<NET>/log)
+.TP
+\fB--merged-url\fP MERGED_URL
+call getauxblock on this url to get work for merged
+mining (example: http://127.0.0.1:10332/)
+.TP
+\fB--merged-userpass\fP MERGED_USERPASS
+use this user and password when requesting merged
+mining work (example: ncuser:ncpass)
+.TP
+\fB--give-author\fP DONATION_PERCENTAGE
+donate this percentage of work to author of p2pool
+(default: 0.5)
+.TP
+\fB--irc-announce\fP
+announce any blocks found on
+irc://irc.freenode.net/#p2pool
+.TP
+\fB--disable-upnp\fP
+don't attempt to use UPnP to forward p2pool's P2P port
+from the Internet to this computer
+.SS
+p2pool interface
+.TP
+\fB--p2pool-port\fP PORT
+use port PORT to listen for connections (forward this
+port from your router!) (default: bitcoin:9333,
+litecoin:9338)
+.TP
+\fB-n\fP ADDR[:PORT], \fB--p2pool-node\fP ADDR[:PORT]
+connect to existing p2pool node at ADDR listening on
+port PORT (defaults to default p2pool P2P port) in
+addition to builtin addresses
+.SS
+worker interface
+.TP
+\fB-w\fP PORT, \fB--worker-port\fP PORT
+listen on PORT for RPC connections from miners
+(default: bitcoin:9332, litecoin:9327)
+.TP
+\fB-f\fP FEE_PERCENTAGE, \fB--fee\fP FEE_PERCENTAGE
+charge workers mining to their own bitcoin address (by
+setting their miner's username to a bitcoin address)
+this percentage fee to mine on your p2pool instance.
+Amount displayed at http://127.0.0.1:WORKER_PORT/fee
+(default: 0)
+.SS
+bitcoind interface
+.TP
+\fB--bitcoind-address\fP BITCOIND_ADDRESS
+connect to this address (default: 127.0.0.1)
+.TP
+\fB--bitcoind-rpc-port\fP BITCOIND_RPC_PORT
+connect to JSON-RPC interface at this port (default:
+bitcoin:8332, litecoin:9332)
+.TP
+\fB--bitcoind-p2p-port\fP BITCOIND_P2P_PORT
+connect to P2P interface at this port (default:
+bitcoin:8333, litecoin:9333)
+.TP
+.B BITCOIND_RPCUSERPASS
+bitcoind RPC interface username, then password, space-
+separated (only one being provided will cause the
+username to default to being empty, and none will
+cause P2Pool to read them from bitcoin.conf)
+.SH SIGNALS
+.TP
+.B
+SIGUSR1
+p2pool will close and re-open its log file.
+.SH AUTHOR
+This man page was initially generated from p2pool's help output with
+txt2man.
+.P
+It was cleaned up and extended by
+Matthias Urlichs <matthias@urlichs.de>.
