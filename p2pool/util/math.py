@@ -145,7 +145,7 @@ def reversed(x):
     try:
         return __builtin__.reversed(x)
     except TypeError:
-        return reversed(list(x))
+        return __builtin__.reversed(list(x))
 
 class Object(object):
     def __init__(self, **kwargs):

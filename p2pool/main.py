@@ -20,11 +20,12 @@ from twisted.web import server, resource
 from twisted.python import log
 from nattraverso import portmapper, ipdiscover
 
-import bitcoin.p2p as bitcoin_p2p, bitcoin.getwork as bitcoin_getwork, bitcoin.data as bitcoin_data
-from bitcoin import worker_interface
-from util import expiring_dict, jsonrpc, variable, deferral, math, logging
-from . import p2p, networks, graphs
-import p2pool, p2pool.data as p2pool_data
+import p2pool
+from p2pool.bitcoin import p2p as bitcoin_p2p, getwork as bitcoin_getwork, data as bitcoin_data
+from p2pool.bitcoin import worker_interface
+from p2pool.util import expiring_dict, jsonrpc, variable, deferral, math, logging
+from p2pool import p2p, networks, graphs
+from p2pool import data as p2pool_data
 
 @deferral.retry('Error getting work from bitcoind:', 3)
 @defer.inlineCallbacks

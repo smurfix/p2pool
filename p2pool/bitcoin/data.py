@@ -4,7 +4,7 @@ import binascii
 import hashlib
 import struct
 
-from . import base58
+from p2pool.bitcoin import base58
 from p2pool.util import bases, math
 import p2pool
 

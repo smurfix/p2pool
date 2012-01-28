@@ -13,7 +13,7 @@ from twisted.internet import defer, protocol, reactor, task
 from twisted.python import log
 
 import p2pool
-from . import data as bitcoin_data, getwork
+from p2pool.bitcoin import data as bitcoin_data, getwork
 from p2pool.util import variable, datachunker, deferral, forest
 
 class TooLong(Exception):

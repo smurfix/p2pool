@@ -4,8 +4,8 @@ Representation of a getwork request/reply
 
 from __future__ import division
 
-from . import data as bitcoin_data
-from . import sha256
+from p2pool.bitcoin import data as bitcoin_data
+from p2pool.bitcoin import sha256
 
 def _swap4(s):
     if len(s) % 4:

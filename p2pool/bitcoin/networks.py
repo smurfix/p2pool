@@ -1,6 +1,6 @@
 from twisted.internet import defer
 
-from . import data
+from p2pool.bitcoin import data
 from p2pool.util import math
 
 BitcoinMainnet = math.Object(

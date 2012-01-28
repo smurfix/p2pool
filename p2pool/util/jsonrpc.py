@@ -7,7 +7,7 @@ from twisted.internet import defer
 from twisted.python import log
 from twisted.web import client, error
 
-import deferred_resource
+from p2pool.util import deferred_resource
 
 class Error(Exception):
     def __init__(self, code, message, data=None):
