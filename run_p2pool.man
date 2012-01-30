@@ -1,6 +1,6 @@
-.TH p2pool 1 "28 January 2012" "" ""
+.TH run_p2pool.py 1 "28 January 2012" "" ""
 .SH NAME
-p2pool
+p2pool \- a peer-to-peer bitcoin mining pool daemon
 .SH SYNOPSIS
 .B run_p2pool.py
 [\fB-h\fP] [\fB--version\fP] [\fB--net\fP {bitcoin,litecoin}] [\fB--testnet\fP]

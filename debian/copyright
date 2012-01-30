@@ -1,0 +1,12 @@
+Format: http://dep.debian.net/deps/dep5
+Upstream-Name: p2pool
+Source: git://github.com/forrestv/p2pool.git
+
+Files: *
+Copyright: 2011-2012 Forrest Voight <forrest@forre.st>
+License: GPL3
+
+Files: nattraverso.*
+Copyright: 2005 Raphael Slinckx <raphael@slinckx.net>
+License: LGPL2
+

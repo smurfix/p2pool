@@ -1,0 +1,8 @@
+p2pool for Debian
+-----------------
+
+Upstream's runp2pool.py stript has been installed as /usr/bin/p2pool.
+
+There's also a (new) manpage.
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Sat, 28 Jan 2012 09:43:18 +0100

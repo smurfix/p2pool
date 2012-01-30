@@ -1,0 +1,20 @@
+Source: p2pool
+Section: net
+Priority: extra
+Maintainer: Matthias Urlichs <matthias@urlichs.de>
+Build-Depends: debhelper (>= 8.0.0), python-all-dev (>> 2.6.6-3~)
+Standards-Version: 3.9.2
+Homepage: http://p2pool.forre.st/
+X-Python-Version: all
+Vcs-Git: git://github.com/forrestv/p2pool.git
+Vcs-Browser: https://github.com/forrestv/p2pool
+
+Package: p2pool
+Architecture: any
+Depends: python (>= 2.6), ${shlibs:Depends}, ${misc:Depends},
+  python-zope.interface, python-twisted-core, python-twisted-web,
+  adduser,
+Description: peer-to-peer pool for Bitcoin mining
+ p2pool implements a peer-to-peer mining pool for bitcoins.
+ Unlike a traditional pool, there is no central authority which
+ distributes the coins that are mined.

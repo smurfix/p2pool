@@ -1,0 +1,13 @@
+# Defaults for p2pool initscript
+# sourced by /etc/init.d/p2pool
+# installed at /etc/default/p2pool by the maintainer scripts
+
+#
+# This is a POSIX shell fragment
+#
+P2POOL_USER=p2pool
+P2POOL_GROUP=bitcoin
+
+# Additional options that are passed to the daemon.
+# See manpage.
+DAEMON_OPTS=""
