@@ -20,8 +20,8 @@ set -e
 
 case "$1" in
     configure)
-		addgroup bitcoin 2>&1 || true
-		adduser p2pool --homedir /var/lib/p2pool --ingroup bitcoin --disabled-login
+		addgroup bitcoin --system 2>&1 || true
+		adduser p2pool --system --home /var/lib/p2pool --ingroup bitcoin --disabled-login
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)
