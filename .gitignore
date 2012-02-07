@@ -3,9 +3,4 @@
 /data/
 *~
 litecoin_scrypt/build/*
-debain/files
-debian/*.log
-debian/*.substvars
-debian/*.debhelper
-debian/p2pool
 build
