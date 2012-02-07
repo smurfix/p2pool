@@ -98,9 +98,11 @@ def erf(x):
 def find_root(y_over_dy, start, steps=10, bounds=(None, None)):
     guess = start
     for i in xrange(steps):
-        guess = guess - y_over_dy(guess)
+        prev, guess = guess, guess - y_over_dy(guess)
         if bounds[0] is not None and guess < bounds[0]: guess = bounds[0]
         if bounds[1] is not None and guess > bounds[1]: guess = bounds[1]
+        if guess == prev:
+            break
     return guess
 
 def ierf(z):
@@ -111,8 +113,9 @@ try:
 except ImportError:
     print 'Install SciPy for more accurate confidence intervals!'
     def binomial_conf_interval(x, n, conf=0.95):
+        assert 0 <= x <= n and 0 <= conf < 1
         if n == 0:
-            return (1-conf)/2, 1-(1-conf)/2
+            left = random.random()*(1 - conf)
         # approximate - Wilson score interval
         z = math.sqrt(2)*ierf(conf)
         p = x/n
@@ -122,6 +125,7 @@ except ImportError:
         return (topa - topb)/bottom, (topa + topb)/bottom
 else:
     def binomial_conf_interval(x, n, conf=0.95):
+        assert 0 <= x <= n and 0 <= conf < 1
         if n == 0:
             left = random.random()*(1 - conf)
             return left, left + conf
@@ -131,15 +135,24 @@ else:
             top = right**(x+1) * (1-right)**(n-x+1) * left*(1-left) - left**(x+1) * (1-left)**(n-x+1) * right * (1-right)
             bottom = (x - n*right)*left*(1-left) - (x - n*left)*right*(1-right)
             return top/bottom/b
-        left_a = find_root(f, (1-conf)/2, 12, (0, 1-conf))
+        left_a = find_root(f, (1-conf)/2, bounds=(0, 1-conf))
         return special.betaincinv(x+1, n-x+1, left_a), special.betaincinv(x+1, n-x+1, left_a + conf)
 
 def binomial_conf_center_radius(x, n, conf=0.95):
+    assert 0 <= x <= n and 0 <= conf < 1
     left, right = binomial_conf_interval(x, n, conf)
     if n == 0:
         return (left+right)/2, (right-left)/2
     p = x/n
     return p, max(p - left, right - p)
+
+minmax = lambda x: (min(x), max(x))
+
+def format_binomial_conf(x, n, conf=0.95, f=lambda x: x):
+    if n == 0:
+        return '???'
+    left, right = minmax(map(f, binomial_conf_interval(x, n, conf)))
+    return '~%.1f%% (%.f-%.f%%)' % (100*f(x/n), 100*left-1/2, 100*right+1/2)
 
 def reversed(x):
     try:
@@ -172,6 +185,32 @@ def weighted_choice(choices):
             return item
         target -= weight
     raise AssertionError()
+
+def natural_to_string(n, alphabet=None):
+    if n < 0:
+        raise TypeError('n must be a natural')
+    if alphabet is None:
+        s = '%x' % (n,)
+        if len(s) % 2:
+            s = '0' + s
+        return s.decode('hex')
+    else:
+        assert len(set(alphabet)) == len(alphabet)
+        res = []
+        while n:
+            n, x = divmod(n, len(alphabet))
+            res.append(alphabet[x])
+        res.reverse()
+        return ''.join(res)
+
+def string_to_natural(s, alphabet=None):
+    if alphabet is None:
+        assert not s.startswith('\x00')
+        return int(s.encode('hex'), 16) if s else 0
+    else:
+        assert len(set(alphabet)) == len(alphabet)
+        assert not s.startswith(alphabet[0])
+        return sum(alphabet.index(char) * len(alphabet)**i for i, char in enumerate(reversed(s)))
 
 if __name__ == '__main__':
     import random

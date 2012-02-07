@@ -33,6 +33,7 @@ else:
 
 open('p2pool/__init__.py', 'wb').write('__version__ = %r\r\n\r\nDEBUG = False\r\n' % get_version())
 
+sys.argv[1:] = ['py2exe']
 setup(name='p2pool',
     version='1.0',
     description='Peer-to-peer Bitcoin mining pool',
@@ -51,3 +52,6 @@ setup(name='p2pool',
 	scripts=["run_p2pool.py"],
 	**ext
 )
+
+os.rename('dist', 'p2pool_win32_' + get_version())
+print 'p2pool_win32_' + get_version()

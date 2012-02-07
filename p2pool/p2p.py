@@ -1,16 +1,17 @@
 from __future__ import division
 
 import random
+import sys
 import time
 
-from twisted.internet import defer, protocol, reactor
+from twisted.internet import defer, error, protocol, reactor
 from twisted.python import log
 
 import p2pool
 from p2pool import data as p2pool_data
 from p2pool.bitcoin import p2p as bitcoin_p2p
 from p2pool.bitcoin import data as bitcoin_data
-from p2pool.util import deferral
+from p2pool.util import deferral, pack
 
 class Protocol(bitcoin_p2p.BaseProtocol):
     version = 2
@@ -56,6 +57,9 @@ class Protocol(bitcoin_p2p.BaseProtocol):
         
         reactor.callLater(10, self._connect_timeout)
         self.timeout_delayed = reactor.callLater(100, self._timeout)
+        
+        old_dataReceived = self.dataReceived
+        self.dataReceived = lambda data: (self.timeout_delayed.reset(100) if not self.timeout_delayed.called else None, old_dataReceived(data))[0]
     
     def _connect_timeout(self):
         if not self.connected2 and self.transport.connected:
@@ -66,10 +70,6 @@ class Protocol(bitcoin_p2p.BaseProtocol):
         if command != 'version' and not self.connected2:
             self.transport.loseConnection()
             return
-        
-        if not self.timeout_delayed.called:
-            self.timeout_delayed.cancel()
-            self.timeout_delayed = reactor.callLater(100, self._timeout)
         
         bitcoin_p2p.BaseProtocol.packetReceived(self, command, payload2)
     
@@ -91,15 +91,15 @@ class Protocol(bitcoin_p2p.BaseProtocol):
             #print 'sending addrme'
             yield deferral.sleep(random.expovariate(1/(100*len(self.node.peers) + 1)))
     
-    message_version = bitcoin_data.ComposedType([
-        ('version', bitcoin_data.IntType(32)),
-        ('services', bitcoin_data.IntType(64)),
+    message_version = pack.ComposedType([
+        ('version', pack.IntType(32)),
+        ('services', pack.IntType(64)),
         ('addr_to', bitcoin_data.address_type),
         ('addr_from', bitcoin_data.address_type),
-        ('nonce', bitcoin_data.IntType(64)),
-        ('sub_version', bitcoin_data.VarStrType()),
-        ('mode', bitcoin_data.IntType(32)), # always 1 for legacy compatibility
-        ('best_share_hash', bitcoin_data.PossiblyNoneType(0, bitcoin_data.IntType(256))),
+        ('nonce', pack.IntType(64)),
+        ('sub_version', pack.VarStrType()),
+        ('mode', pack.IntType(32)), # always 1 for legacy compatibility
+        ('best_share_hash', pack.PossiblyNoneType(0, pack.IntType(256))),
     ])
     def handle_version(self, version, services, addr_to, addr_from, nonce, sub_version, mode, best_share_hash):
         if self.other_version is not None or version < 2:
@@ -129,12 +129,12 @@ class Protocol(bitcoin_p2p.BaseProtocol):
         if best_share_hash is not None:
             self.node.handle_share_hashes([best_share_hash], self)
     
-    message_ping = bitcoin_data.ComposedType([])
+    message_ping = pack.ComposedType([])
     def handle_ping(self):
         pass
     
-    message_addrme = bitcoin_data.ComposedType([
-        ('port', bitcoin_data.IntType(16)),
+    message_addrme = pack.ComposedType([
+        ('port', pack.IntType(16)),
     ])
     def handle_addrme(self, port):
         host = self.transport.getPeer().host
@@ -156,9 +156,9 @@ class Protocol(bitcoin_p2p.BaseProtocol):
                     ),
                 ])
     
-    message_addrs = bitcoin_data.ComposedType([
-        ('addrs', bitcoin_data.ListType(bitcoin_data.ComposedType([
-            ('timestamp', bitcoin_data.IntType(64)),
+    message_addrs = pack.ComposedType([
+        ('addrs', pack.ListType(pack.ComposedType([
+            ('timestamp', pack.IntType(64)),
             ('address', bitcoin_data.address_type),
         ]))),
     ])
@@ -168,8 +168,8 @@ class Protocol(bitcoin_p2p.BaseProtocol):
             if random.random() < .8 and self.node.peers:
                 random.choice(self.node.peers.values()).send_addrs(addrs=[addr_record])
     
-    message_getaddrs = bitcoin_data.ComposedType([
-        ('count', bitcoin_data.IntType(32)),
+    message_getaddrs = pack.ComposedType([
+        ('count', pack.IntType(32)),
     ])
     def handle_getaddrs(self, count):
         if count > 100:
@@ -186,16 +186,16 @@ class Protocol(bitcoin_p2p.BaseProtocol):
             self.node.get_good_peers(count)
         ])
     
-    message_getshares = bitcoin_data.ComposedType([
-        ('hashes', bitcoin_data.ListType(bitcoin_data.IntType(256))),
-        ('parents', bitcoin_data.VarIntType()),
-        ('stops', bitcoin_data.ListType(bitcoin_data.IntType(256))),
+    message_getshares = pack.ComposedType([
+        ('hashes', pack.ListType(pack.IntType(256))),
+        ('parents', pack.VarIntType()),
+        ('stops', pack.ListType(pack.IntType(256))),
     ])
     def handle_getshares(self, hashes, parents, stops):
         self.node.handle_get_shares(hashes, parents, stops, self)
     
-    message_shares = bitcoin_data.ComposedType([
-        ('shares', bitcoin_data.ListType(p2pool_data.share_type)),
+    message_shares = pack.ComposedType([
+        ('shares', pack.ListType(p2pool_data.share_type)),
     ])
     def handle_shares(self, shares):
         res = []
@@ -217,9 +217,9 @@ class Protocol(bitcoin_p2p.BaseProtocol):
     
     def connectionLost(self, reason):
         if self.connected2:
-            self.factory.proto_disconnected(self)
+            self.factory.proto_disconnected(self, reason)
             self.connected2 = False
-        self.factory.proto_lost_connection(self)
+        self.factory.proto_lost_connection(self, reason)
 
 class ServerFactory(protocol.ServerFactory):
     def __init__(self, node, max_conns):
@@ -238,19 +238,28 @@ class ServerFactory(protocol.ServerFactory):
     
     def proto_made_connection(self, proto):
         self.conns.add(proto)
-    def proto_lost_connection(self, proto):
+    def proto_lost_connection(self, proto, reason):
         self.conns.remove(proto)
     
     def proto_connected(self, proto):
         self.node.got_conn(proto)
-    def proto_disconnected(self, proto):
-        self.node.lost_conn(proto)
+    def proto_disconnected(self, proto, reason):
+        self.node.lost_conn(proto, reason)
     
     def start(self):
         assert not self.running
         self.running = True
         
-        self.listen_port = reactor.listenTCP(self.node.port, self)
+        def attempt_listen():
+            if not self.running:
+                return
+            try:
+                self.listen_port = reactor.listenTCP(self.node.port, self)
+            except error.CannotListenError, e:
+                print >>sys.stderr, 'Error binding to P2P port: %s. Retrying in 3 seconds.' % (e.socketError,)
+                reactor.callLater(3, attempt_listen)
+        attempt_listen()
+    
     def stop(self):
         assert self.running
         self.running = False
@@ -291,15 +300,15 @@ class ClientFactory(protocol.ClientFactory):
     
     def proto_made_connection(self, proto):
         pass
-    def proto_lost_connection(self, proto):
+    def proto_lost_connection(self, proto, reason):
         pass
     
     def proto_connected(self, proto):
         self.conns.add(proto)
         self.node.got_conn(proto)
-    def proto_disconnected(self, proto):
+    def proto_disconnected(self, proto, reason):
         self.conns.remove(proto)
-        self.node.lost_conn(proto)
+        self.node.lost_conn(proto, reason)
     
     def start(self):
         assert not self.running
@@ -335,14 +344,14 @@ class SingleClientFactory(protocol.ReconnectingClientFactory):
     
     def proto_made_connection(self, proto):
         pass
-    def proto_lost_connection(self, proto):
+    def proto_lost_connection(self, proto, reason):
         pass
     
     def proto_connected(self, proto):
         self.resetDelay()
         self.node.got_conn(proto)
-    def proto_disconnected(self, proto):
-        self.node.lost_conn(proto)
+    def proto_disconnected(self, proto, reason):
+        self.node.lost_conn(proto, reason)
 
 class Node(object):
     def __init__(self, best_share_hash_func, port, net, addr_store={}, connect_addrs=set(), desired_outgoing_conns=10, max_outgoing_attempts=30, max_incoming_conns=50, preferred_storage=1000):
@@ -401,14 +410,14 @@ class Node(object):
         
         print '%s connection to peer %s:%i established. p2pool version: %i %r' % ('Incoming' if conn.incoming else 'Outgoing', conn.addr[0], conn.addr[1], conn.other_version, conn.other_sub_version)
     
-    def lost_conn(self, conn):
+    def lost_conn(self, conn, reason):
         if conn.nonce not in self.peers:
             raise ValueError('''don't have peer''')
         if conn is not self.peers[conn.nonce]:
             raise ValueError('wrong conn')
         del self.peers[conn.nonce]
         
-        print 'Lost peer %s:%i' % (conn.addr[0], conn.addr[1])
+        print 'Lost peer %s:%i - %s' % (conn.addr[0], conn.addr[1], reason.getErrorMessage())
     
     
     def got_addr(self, (host, port), services, timestamp):
@@ -429,7 +438,7 @@ class Node(object):
     
     def get_good_peers(self, max_count):
         t = time.time()
-        return [x[0] for x in sorted(self.addr_store.iteritems(), key=lambda (k, (services, first_seen, last_seen)): -(last_seen - first_seen)/max(3600, t - last_seen)*random.expovariate(1))][:max_count]
+        return [x[0] for x in sorted(self.addr_store.iteritems(), key=lambda (k, (services, first_seen, last_seen)): -max(3600, last_seen - first_seen)/max(3600, t - last_seen)*random.expovariate(1))][:max_count]
 
 if __name__ == '__main__':
     p = random.randrange(2**15, 2**16)
