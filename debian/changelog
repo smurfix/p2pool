@@ -1,0 +1,11 @@
+p2pool (0.8.3-1) unstable; urgency=low
+
+  * Upstream Merge
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Tue, 07 Feb 2012 15:19:36 +0100
+
+p2pool (0.8.2-1) unstable; urgency=low
+
+  * Initial release (Closes: #nnnn)
+
+ -- Matthias Urlichs <matthias@urlichs.de>  Sat, 28 Jan 2012 09:43:18 +0100

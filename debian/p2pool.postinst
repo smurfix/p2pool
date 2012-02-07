@@ -22,6 +22,8 @@ case "$1" in
     configure)
 		addgroup bitcoin --system 2>&1 || true
 		adduser p2pool --system --home /var/lib/p2pool --ingroup bitcoin --disabled-login
+		systemctl enable p2pool.service
+		systemctl start p2pool.service
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

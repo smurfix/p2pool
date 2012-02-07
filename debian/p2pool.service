@@ -1,0 +1,38 @@
+# This file is part of avahi.
+#
+# avahi is free software; you can redistribute it and/or modify it
+# under the terms of the GNU Lesser General Public License as
+# published by the Free Software Foundation; either version 2 of the
+# License, or (at your option) any later version.
+#
+# avahi is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+# or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
+# License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with avahi; if not, write to the Free Software
+# Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+# USA.
+
+[Unit]
+Description=distributed Bitcoin mining pool
+Requires=network.target
+After=bitcoind.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/p2pool -a 1HM8ysRnYZzmXD5i4W7FEiDP3brCZGsYC5
+TimeoutSec=60
+Restart=on-failure
+
+WorkingDirectory=/var/lib/p2pool
+User=p2pool
+OOMScoreAdjust=-200
+UMask=027
+Environment=HOME=/var/lib/p2pool
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
