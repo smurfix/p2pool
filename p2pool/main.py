@@ -950,7 +950,7 @@ def run():
     
     net = networks.nets[args.net_name + ('_testnet' if args.testnet else '')]
     
-    datadir_path = os.path.join(os.path.dirname(sys.argv[0]), 'data', net.NAME)
+    datadir_path = os.path.join(os.environ["HOME"], 'data', net.NAME)
     if not os.path.exists(datadir_path):
         os.makedirs(datadir_path)
     
