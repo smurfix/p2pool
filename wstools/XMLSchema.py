@@ -15,9 +15,12 @@
 ident = "$Id$"
 
 import types, weakref, sys, warnings
-from Namespaces import SCHEMA, XMLNS, SOAP, APACHE
-from Utility import DOM, DOMException, Collection, SplitQName, basejoin
-from StringIO import StringIO
+from wstools.Namespaces import SCHEMA, XMLNS, SOAP, APACHE
+from wstools.Utility import DOM, DOMException, Collection, SplitQName, basejoin
+try:
+	from cStringIO import StringIO
+except ImportError:
+	from StringIO import StringIO
 
 # If we have no threading, this should be a no-op
 try:

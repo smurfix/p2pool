@@ -10,10 +10,13 @@
 ident = "$Id$"
 
 import weakref
-from cStringIO import StringIO
-from Namespaces import OASIS, XMLNS, WSA, WSA_LIST, WSAW_LIST, WSRF_V1_2, WSRF
-from Utility import Collection, CollectionNS, DOM, ElementProxy, basejoin
-from XMLSchema import XMLSchema, SchemaReader, WSDLToolsAdapter
+try:
+	from cStringIO import StringIO
+except ImportError:
+	from StringIO import StringIO
+from wstools.Namespaces import OASIS, XMLNS, WSA, WSA_LIST, WSAW_LIST, WSRF_V1_2, WSRF
+from wstools.Utility import Collection, CollectionNS, DOM, ElementProxy, basejoin
+from wstools.XMLSchema import XMLSchema, SchemaReader, WSDLToolsAdapter
 
 
 class WSDLReader:
