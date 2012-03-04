@@ -1,3 +1,3 @@
-__version__ = '25dda15'
+__version__ = '55687f1'
 
 DEBUG = False
