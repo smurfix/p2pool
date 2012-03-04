@@ -20,33 +20,28 @@ class TooLong(Exception):
     pass
 
 class BaseProtocol(protocol.Protocol):
-    def connectionMade(self):
+    def __init__(self, message_prefix, max_payload_length):
+        self._message_prefix = message_prefix
+        self._max_payload_length = max_payload_length
         self.dataReceived = datachunker.DataChunker(self.dataReceiver())
     
     def dataReceiver(self):
         while True:
             start = ''
-            while start != self._prefix:
-                start = (start + (yield 1))[-len(self._prefix):]
+            while start != self._message_prefix:
+                start = (start + (yield 1))[-len(self._message_prefix):]
             
             command = (yield 12).rstrip('\0')
             length, = struct.unpack('<I', (yield 4))
-            
-            if length > self.max_payload_length:
+            if length > self._max_payload_length:
                 print 'length too large'
                 continue
-            
-            if self.use_checksum:
-                checksum = yield 4
-            else:
-                checksum = None
-            
+            checksum = yield 4
             payload = yield length
             
-            if checksum is not None:
-                if hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] != checksum:
-                    print 'invalid hash for', self.transport.getPeer().host, repr(command), length, checksum.encode('hex'), hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4].encode('hex'), payload.encode('hex')
-                    continue
+            if hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] != checksum:
+                print 'invalid hash for', self.transport.getPeer().host, repr(command), length, checksum.encode('hex'), hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4].encode('hex'), payload.encode('hex')
+                continue
             
             type_ = getattr(self, 'message_' + command, None)
             if type_ is None:
@@ -55,13 +50,11 @@ class BaseProtocol(protocol.Protocol):
                 continue
             
             try:
-                payload2 = type_.unpack(payload)
+                self.packetReceived(command, type_.unpack(payload))
             except:
-                print 'RECV', command, checksum.encode('hex') if checksum is not None else None, repr(payload.encode('hex')), len(payload)
-                log.err(None, 'Error parsing message: (see RECV line)')
-                continue
-            
-            self.packetReceived(command, payload2)
+                print 'RECV', command, payload[:100].encode('hex') + ('...' if len(payload) > 100 else '')
+                log.err(None, 'Error handling message: (see RECV line)')
+                self.badPeerHappened()
     
     def packetReceived(self, command, payload2):
         handler = getattr(self, 'handle_' + command, None)
@@ -70,11 +63,10 @@ class BaseProtocol(protocol.Protocol):
                 print 'no handler for', repr(command)
             return
         
-        try:
-            handler(**payload2)
-        except:
-            print 'RECV', command, repr(payload2)[:100]
-            log.err(None, 'Error handling message: (see RECV line)')
+        handler(**payload2)
+    
+    def badPeerHappened(self):
+        self.transport.loseConnection()
     
     def sendPacket(self, command, payload2):
         if len(command) >= 12:
@@ -84,14 +76,9 @@ class BaseProtocol(protocol.Protocol):
             raise ValueError('invalid command')
         #print 'SEND', command, repr(payload2)[:500]
         payload = type_.pack(payload2)
-        if len(payload) > self.max_payload_length:
+        if len(payload) > self._max_payload_length:
             raise TooLong('payload too long')
-        if self.use_checksum:
-            checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
-        else:
-            checksum = ''
-        data = self._prefix + struct.pack('<12sI', command, len(payload)) + checksum + payload
-        self.transport.write(data)
+        self.transport.write(self._message_prefix + struct.pack('<12sI', command, len(payload)) + hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4] + payload)
     
     def __getattr__(self, attr):
         prefix = 'send_'
@@ -103,19 +90,9 @@ class BaseProtocol(protocol.Protocol):
 
 class Protocol(BaseProtocol):
     def __init__(self, net):
-        self._prefix = net.P2P_PREFIX
-    
-    version = 0
-    
-    max_payload_length = 1000000
-    
-    @property
-    def use_checksum(self):
-        return self.version >= 209
+        BaseProtocol.__init__(self, net.P2P_PREFIX, 1000000)
     
     def connectionMade(self):
-        BaseProtocol.connectionMade(self)
-        
         self.send_version(
             version=32200,
             services=1,
@@ -146,17 +123,10 @@ class Protocol(BaseProtocol):
         ('start_height', pack.IntType(32)),
     ])
     def handle_version(self, version, services, time, addr_to, addr_from, nonce, sub_version_num, start_height):
-        #print 'VERSION', locals()
-        self.version_after = version
         self.send_verack()
     
     message_verack = pack.ComposedType([])
     def handle_verack(self):
-        self.version = self.version_after
-        
-        self.ready()
-    
-    def ready(self):
         self.get_block = deferral.ReplyMatcher(lambda hash: self.send_getdata(requests=[dict(type='block', hash=hash)]))
         self.get_block_header = deferral.ReplyMatcher(lambda hash: self.send_getheaders(version=1, have=[], last=hash))
         self.get_tx = deferral.ReplyMatcher(lambda hash: self.send_getdata(requests=[dict(type='tx', hash=hash)]))
@@ -286,7 +256,7 @@ class HeaderWrapper(object):
 class HeightTracker(object):
     '''Point this at a factory and let it take care of getting block heights'''
     
-    def __init__(self, rpc_proxy, factory, backlog_needed=1000):
+    def __init__(self, rpc_proxy, factory, backlog_needed):
         self._rpc_proxy = rpc_proxy
         self._factory = factory
         self._backlog_needed = backlog_needed
@@ -294,7 +264,7 @@ class HeightTracker(object):
         self._tracker = forest.Tracker()
         
         self._watch1 = self._factory.new_headers.watch(self._heard_headers)
-        self._watch2 = self._factory.new_block.watch(self._heard_block)
+        self._watch2 = self._factory.new_block.watch(self._request)
         
         self._requested = set()
         self._clear_task = task.LoopingCall(self._requested.clear)
@@ -308,6 +278,7 @@ class HeightTracker(object):
         self._think_task.start(15)
         self._think2_task = task.LoopingCall(self._think2)
         self._think2_task.start(15)
+        self.best_hash = None
     
     def _think(self):
         try:
@@ -325,6 +296,7 @@ class HeightTracker(object):
         try:
             ba = getwork.BlockAttempt.from_getwork((yield self._rpc_proxy.rpc_getwork()))
             self._request(ba.previous_block)
+            self.best_hash = ba.previous_block
         except:
             log.err(None, 'Error in HeightTracker._think2:')
     
@@ -344,9 +316,6 @@ class HeightTracker(object):
             print 'Have %i/%i block headers' % (len(self._tracker.shares), self._backlog_needed)
             self._last_notified_size = len(self._tracker.shares)
     
-    def _heard_block(self, block_hash):
-        self._request(block_hash)
-    
     @defer.inlineCallbacks
     def _request(self, last):
         if last in self._tracker.shares:
@@ -358,17 +327,11 @@ class HeightTracker(object):
     
     def get_height_rel_highest(self, block_hash):
         # callers: highest height can change during yields!
+        best_height, best_last = self._tracker.get_height_and_last(self.best_hash)
         height, last = self._tracker.get_height_and_last(block_hash)
-        if last not in self._tracker.tails:
+        if last != best_last:
             return -1000000000 # XXX hack
-        return height - max(self._tracker.get_height(head_hash) for head_hash in self._tracker.tails[last])
-    
-    def stop(self):
-        self._factory.new_headers.unwatch(self._watch1)
-        self._factory.new_block.unwatch(self._watch2)
-        self._clear_task.stop()
-        self._think_task.stop()
-        self._think2_task.stop()
+        return height - best_height
 
 if __name__ == '__main__':
     from . import networks

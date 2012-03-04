@@ -3,6 +3,7 @@ from __future__ import absolute_import, division
 import __builtin__
 import math
 import random
+import time
 
 def median(x, use_float=True):
     # there exist better algorithms...
@@ -73,6 +74,12 @@ def format(x):
     s = '' if count == 0 else prefixes[count - 1]
     return '%i' % (x,) + s
 
+def format_dt(dt):
+    for value, name in [(60*60*24, 'days'), (60*60, 'hours'), (60, 'minutes'), (1, 'seconds')]:
+        if dt > value:
+            break
+    return '%.01f %s' % (dt/value, name)
+
 perfect_round = lambda x: int(x + random.random())
 
 def erf(x):
@@ -116,6 +123,7 @@ except ImportError:
         assert 0 <= x <= n and 0 <= conf < 1
         if n == 0:
             left = random.random()*(1 - conf)
+            return left, left + conf
         # approximate - Wilson score interval
         z = math.sqrt(2)*ierf(conf)
         p = x/n
@@ -129,22 +137,14 @@ else:
         if n == 0:
             left = random.random()*(1 - conf)
             return left, left + conf
-        b = special.beta(x+1, n-x+1)
+        bl = float(special.betaln(x+1, n-x+1))
         def f(left_a):
-            left, right = max(1e-8, special.betaincinv(x+1, n-x+1, left_a)), min(1-1e-8, special.betaincinv(x+1, n-x+1, left_a + conf))
-            top = right**(x+1) * (1-right)**(n-x+1) * left*(1-left) - left**(x+1) * (1-left)**(n-x+1) * right * (1-right)
+            left, right = max(1e-8, float(special.betaincinv(x+1, n-x+1, left_a))), min(1-1e-8, float(special.betaincinv(x+1, n-x+1, left_a + conf)))
+            top = math.exp(math.log(right)*(x+1) + math.log(1-right)*(n-x+1) + math.log(left) + math.log(1-left) - bl) - math.exp(math.log(left)*(x+1) + math.log(1-left)*(n-x+1) + math.log(right) + math.log(1-right) - bl)
             bottom = (x - n*right)*left*(1-left) - (x - n*left)*right*(1-right)
-            return top/bottom/b
+            return top/bottom
         left_a = find_root(f, (1-conf)/2, bounds=(0, 1-conf))
-        return special.betaincinv(x+1, n-x+1, left_a), special.betaincinv(x+1, n-x+1, left_a + conf)
-
-def binomial_conf_center_radius(x, n, conf=0.95):
-    assert 0 <= x <= n and 0 <= conf < 1
-    left, right = binomial_conf_interval(x, n, conf)
-    if n == 0:
-        return (left+right)/2, (right-left)/2
-    p = x/n
-    return p, max(p - left, right - p)
+        return float(special.betaincinv(x+1, n-x+1, left_a)), float(special.betaincinv(x+1, n-x+1, left_a + conf))
 
 minmax = lambda x: (min(x), max(x))
 
@@ -152,7 +152,7 @@ def format_binomial_conf(x, n, conf=0.95, f=lambda x: x):
     if n == 0:
         return '???'
     left, right = minmax(map(f, binomial_conf_interval(x, n, conf)))
-    return '~%.1f%% (%.f-%.f%%)' % (100*f(x/n), 100*left-1/2, 100*right+1/2)
+    return '~%.1f%% (%.f-%.f%%)' % (100*f(x/n), math.floor(100*left), math.ceil(100*right))
 
 def reversed(x):
     try:
@@ -211,6 +211,35 @@ def string_to_natural(s, alphabet=None):
         assert len(set(alphabet)) == len(alphabet)
         assert not s.startswith(alphabet[0])
         return sum(alphabet.index(char) * len(alphabet)**i for i, char in enumerate(reversed(s)))
+
+class RateMonitor(object):
+    def __init__(self, max_lookback_time):
+        self.max_lookback_time = max_lookback_time
+        
+        self.datums = []
+        self.first_timestamp = None
+    
+    def _prune(self):
+        start_time = time.time() - self.max_lookback_time
+        for i, (ts, datum) in enumerate(self.datums):
+            if ts > start_time:
+                self.datums[:] = self.datums[i:]
+                return
+    
+    def get_datums_in_last(self, dt=None):
+        if dt is None:
+            dt = self.max_lookback_time
+        assert dt <= self.max_lookback_time
+        self._prune()
+        now = time.time()
+        return [datum for ts, datum in self.datums if ts > now - dt], min(dt, now - self.first_timestamp) if self.first_timestamp is not None else 0
+    
+    def add_datum(self, datum):
+        self._prune()
+        t = time.time()
+        self.datums.append((t, datum))
+        if self.first_timestamp is None:
+            self.first_timestamp = t
 
 if __name__ == '__main__':
     import random

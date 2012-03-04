@@ -21,8 +21,6 @@ def size((data, pos)):
 class Type(object):
     __slots__ = []
     
-    # the same data can have only one unpacked representation, but multiple packed binary representations
-    
     def __hash__(self):
         rval = getattr(self, '_hash', None)
         if rval is None:
@@ -81,35 +79,36 @@ class Type(object):
         return data
 
 class VarIntType(Type):
-    # redundancy doesn't matter here because bitcoin and p2pool both reencode before hashing
     def read(self, file):
         data, file = read(file, 1)
         first = ord(data)
         if first < 0xfd:
             return first, file
-        elif first == 0xfd:
-            desc, length = '<H', 2
+        if first == 0xfd:
+            desc, length, minimum = '<H', 2, 0xfd
         elif first == 0xfe:
-            desc, length = '<I', 4
+            desc, length, minimum = '<I', 4, 2**16
         elif first == 0xff:
-            desc, length = '<Q', 8
+            desc, length, minimum = '<Q', 8, 2**32
         else:
             raise AssertionError()
-        data, file = read(file, length)
-        return struct.unpack(desc, data)[0], file
+        data2, file = read(file, length)
+        res, = struct.unpack(desc, data2)
+        if res < minimum:
+            raise AssertionError('VarInt not canonically packed')
+        return res, file
     
     def write(self, file, item):
         if item < 0xfd:
-            file = file, struct.pack('<B', item)
+            return file, struct.pack('<B', item)
         elif item <= 0xffff:
-            file = file, struct.pack('<BH', 0xfd, item)
+            return file, struct.pack('<BH', 0xfd, item)
         elif item <= 0xffffffff:
-            file = file, struct.pack('<BI', 0xfe, item)
+            return file, struct.pack('<BI', 0xfe, item)
         elif item <= 0xffffffffffffffff:
-            file = file, struct.pack('<BQ', 0xff, item)
+            return file, struct.pack('<BQ', 0xff, item)
         else:
             raise ValueError('int too large for varint')
-        return file
 
 class VarStrType(Type):
     _inner_size = VarIntType()
@@ -241,6 +240,8 @@ def get_record(fields):
             #        yield field, getattr(self, field)
             def keys(self):
                 return self.__slots__
+            def get(self, key, default=None):
+                return getattr(self, key, default)
             def __eq__(self, other):
                 if isinstance(other, dict):
                     return dict(self) == other
@@ -255,6 +256,7 @@ def get_record(fields):
 class ComposedType(Type):
     def __init__(self, fields):
         self.fields = tuple(fields)
+        self.field_names = set(k for k, v in fields)
     
     def read(self, file):
         item = get_record(k for k, v in self.fields)
@@ -263,6 +265,7 @@ class ComposedType(Type):
         return item, file
     
     def write(self, file, item):
+        assert set(item.keys()) == self.field_names
         for key, type_ in self.fields:
             file = type_.write(file, item[key])
         return file
@@ -280,3 +283,15 @@ class PossiblyNoneType(Type):
         if item == self.none_value:
             raise ValueError('none_value used')
         return self.inner.write(file, self.none_value if item is None else item)
+
+class FixedStrType(Type):
+    def __init__(self, length):
+        self.length = length
+    
+    def read(self, file):
+        return read(file, self.length)
+    
+    def write(self, file, item):
+        if len(item) != self.length:
+            raise ValueError('incorrect length item!')
+        return file, item

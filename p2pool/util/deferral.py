@@ -1,6 +1,7 @@
 from __future__ import division
 
 import itertools
+import sys
 
 from twisted.internet import defer, reactor
 from twisted.python import failure, log
@@ -10,7 +11,10 @@ def sleep(t):
     reactor.callLater(t, d.callback, None)
     return d
 
-def retry(message, delay, max_retries=None):
+class RetrySilentlyException(Exception):
+    pass
+
+def retry(message='Error:', delay=3, max_retries=None, traceback=True):
     '''
     @retry('Error getting block:', 1)
     @defer.inlineCallbacks
@@ -24,10 +28,14 @@ def retry(message, delay, max_retries=None):
             for i in itertools.count():
                 try:
                     result = yield func(*args, **kwargs)
-                except:
+                except Exception, e:
                     if i == max_retries:
                         raise
-                    log.err(None, message)
+                    if not isinstance(e, RetrySilentlyException):
+                        if traceback:
+                            log.err(None, message)
+                        else:
+                            print >>sys.stderr, message, e
                     yield sleep(delay)
                 else:
                     defer.returnValue(result)
@@ -145,14 +153,9 @@ class DeferredCacher(object):
     
     _nothing = object()
     def call_now(self, key, default=_nothing):
-        if key in self.waiting:
-            if default is not self._nothing:
-                return default
-            raise NotNowError(key)
-        
         if key in self.backing:
             return self.backing[key]
-        else:
+        if key not in self.waiting:
             self.waiting[key] = defer.Deferred()
             def cb(value):
                 self.backing[key] = value
@@ -164,6 +167,6 @@ class DeferredCacher(object):
                 fail.printTraceback()
                 print
             self.func(key).addCallback(cb).addErrback(eb)
-            if default is not self._nothing:
-                return default
-            raise NotNowError(key)
+        if default is not self._nothing:
+            return default
+        raise NotNowError(key)

@@ -1,10 +1,9 @@
 from __future__ import division
 
 import random
-import sys
 import time
 
-from twisted.internet import defer, error, protocol, reactor
+from twisted.internet import defer, protocol, reactor
 from twisted.python import log
 
 import p2pool
@@ -14,30 +13,21 @@ from p2pool.bitcoin import data as bitcoin_data
 from p2pool.util import deferral, pack
 
 class Protocol(bitcoin_p2p.BaseProtocol):
-    version = 2
-    sub_version = p2pool.__version__
-    
     def __init__(self, node, incoming):
+        bitcoin_p2p.BaseProtocol.__init__(self, node.net.PREFIX, 1000000)
         self.node = node
         self.incoming = incoming
         
-        self._prefix = self.node.net.PREFIX
-    
-    max_payload_length = 1000000
-    use_checksum = True
-    
-    other_version = None
-    connected2 = False
+        self.other_version = None
+        self.connected2 = False
     
     def connectionMade(self):
-        bitcoin_p2p.BaseProtocol.connectionMade(self)
-        
         self.factory.proto_made_connection(self)
         
         self.addr = self.transport.getPeer().host, self.transport.getPeer().port
         
         self.send_version(
-            version=self.version,
+            version=3,
             services=0,
             addr_to=dict(
                 services=0,
@@ -50,7 +40,7 @@ class Protocol(bitcoin_p2p.BaseProtocol):
                 port=self.transport.getHost().port,
             ),
             nonce=self.node.nonce,
-            sub_version=self.sub_version,
+            sub_version=p2pool.__version__,
             mode=1,
             best_share_hash=self.node.best_share_hash_func(),
         )
@@ -59,7 +49,11 @@ class Protocol(bitcoin_p2p.BaseProtocol):
         self.timeout_delayed = reactor.callLater(100, self._timeout)
         
         old_dataReceived = self.dataReceived
-        self.dataReceived = lambda data: (self.timeout_delayed.reset(100) if not self.timeout_delayed.called else None, old_dataReceived(data))[0]
+        def new_dataReceived(data):
+            if not self.timeout_delayed.called:
+                self.timeout_delayed.reset(100)
+            old_dataReceived(data)
+        self.dataReceived = new_dataReceived
     
     def _connect_timeout(self):
         if not self.connected2 and self.transport.connected:
@@ -72,6 +66,10 @@ class Protocol(bitcoin_p2p.BaseProtocol):
             return
         
         bitcoin_p2p.BaseProtocol.packetReceived(self, command, payload2)
+    
+    def badPeerHappened(self):
+        self.transport.loseConnection()
+        self.node.bans[self.transport.getPeer().host] = time.time() + 60*60
     
     def _timeout(self):
         if self.transport.connected:
@@ -198,14 +196,9 @@ class Protocol(bitcoin_p2p.BaseProtocol):
         ('shares', pack.ListType(p2pool_data.share_type)),
     ])
     def handle_shares(self, shares):
-        res = []
-        for share in shares:
-            share_obj = p2pool_data.Share.from_share(share, self.node.net)
-            share_obj.peer = self
-            res.append(share_obj)
-        self.node.handle_shares(res, self)
+        self.node.handle_shares([p2pool_data.Share.from_share(share, self.node.net, self) for share in shares], self)
     
-    def sendShares(self, shares, full=False):
+    def sendShares(self, shares):
         def att(f, **kwargs):
             try:
                 f(**kwargs)
@@ -226,20 +219,30 @@ class ServerFactory(protocol.ServerFactory):
         self.node = node
         self.max_conns = max_conns
         
-        self.conns = set()
+        self.conns = {}
         self.running = False
     
     def buildProtocol(self, addr):
-        if len(self.conns) >= self.max_conns:
+        if sum(self.conns.itervalues()) >= self.max_conns or self.conns.get(self._host_to_ident(addr.host), 0) >= 3:
+            return None
+        if addr.host in self.node.bans and self.node.bans[addr.host] > time.time():
             return None
         p = Protocol(self.node, True)
         p.factory = self
         return p
     
+    def _host_to_ident(self, host):
+        a, b, c, d = host.split('.')
+        return a, b
+    
     def proto_made_connection(self, proto):
-        self.conns.add(proto)
+        ident = self._host_to_ident(proto.transport.getPeer().host)
+        self.conns[ident] = self.conns.get(ident, 0) + 1
     def proto_lost_connection(self, proto, reason):
-        self.conns.remove(proto)
+        ident = self._host_to_ident(proto.transport.getPeer().host)
+        self.conns[ident] -= 1
+        if not self.conns[ident]:
+            del self.conns[ident]
     
     def proto_connected(self, proto):
         self.node.got_conn(proto)
@@ -251,14 +254,9 @@ class ServerFactory(protocol.ServerFactory):
         self.running = True
         
         def attempt_listen():
-            if not self.running:
-                return
-            try:
+            if self.running:
                 self.listen_port = reactor.listenTCP(self.node.port, self)
-            except error.CannotListenError, e:
-                print >>sys.stderr, 'Error binding to P2P port: %s. Retrying in 3 seconds.' % (e.socketError,)
-                reactor.callLater(3, attempt_listen)
-        attempt_listen()
+        deferral.retry('Error binding to P2P port:', traceback=False)(attempt_listen)()
     
     def stop(self):
         assert self.running
@@ -272,9 +270,13 @@ class ClientFactory(protocol.ClientFactory):
         self.desired_conns = desired_conns
         self.max_attempts = max_attempts
         
-        self.attempts = {}
+        self.attempts = set()
         self.conns = set()
         self.running = False
+    
+    def _host_to_ident(self, host):
+        a, b, c, d = host.split('.')
+        return a, b
     
     def buildProtocol(self, addr):
         p = Protocol(self.node, False)
@@ -282,21 +284,16 @@ class ClientFactory(protocol.ClientFactory):
         return p
     
     def startedConnecting(self, connector):
-        host, port = connector.getDestination().host, connector.getDestination().port
-        if (host, port) in self.attempts:
-            raise ValueError('already have attempt')
-        self.attempts[host, port] = connector
+        ident = self._host_to_ident(connector.getDestination().host)
+        if ident in self.attempts:
+            raise AssertionError('already have attempt')
+        self.attempts.add(ident)
     
     def clientConnectionFailed(self, connector, reason):
-        self.clientConnectionLost(connector, reason)
+        self.attempts.remove(self._host_to_ident(connector.getDestination().host))
     
     def clientConnectionLost(self, connector, reason):
-        host, port = connector.getDestination().host, connector.getDestination().port
-        if (host, port) not in self.attempts:
-            raise ValueError('''don't have attempt''')
-        if connector is not self.attempts[host, port]:
-            raise ValueError('wrong connector')
-        del self.attempts[host, port]
+        self.attempts.remove(self._host_to_ident(connector.getDestination().host))
     
     def proto_made_connection(self, proto):
         pass
@@ -325,7 +322,11 @@ class ClientFactory(protocol.ClientFactory):
                 if len(self.conns) < self.desired_conns and len(self.attempts) < self.max_attempts and self.node.addr_store:
                     (host, port), = self.node.get_good_peers(1)
                     
-                    if (host, port) not in self.attempts:
+                    if self._host_to_ident(host) in self.attempts:
+                        pass
+                    elif host in self.node.bans and self.node.bans[host] > time.time():
+                        pass
+                    else:
                         #print 'Trying to connect to', host, port
                         reactor.connectTCP(host, port, self, timeout=5)
             except:
@@ -364,6 +365,7 @@ class Node(object):
         
         self.nonce = random.randrange(2**64)
         self.peers = {}
+        self.bans = {} # address -> end_time
         self.clientfactory = ClientFactory(self, desired_outgoing_conns, max_outgoing_attempts)
         self.serverfactory = ServerFactory(self, max_incoming_conns)
         self.running = False
